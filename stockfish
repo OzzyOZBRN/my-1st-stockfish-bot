@@ -1,0 +1,142 @@
+import sys
+import chess
+import chess.svg
+from PyQt5.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QWidget, QTextEdit, QLabel, QSizePolicy
+from PyQt5.QtSvg import QSvgWidget
+from PyQt5.QtCore import Qt, QPropertyAnimation, QRect, QEasingCurve
+from PyQt5.QtGui import QPixmap
+from stockfish import Stockfish
+import random
+
+# stockfish w directory
+stockfish = Stockfish(path="C:/Users/TUF Gaming/Desktop/stockfish-windows-x86-64-avx2/stockfish/stockfish-windows-x86-64-avx2.exe")
+stockfish.update_engine_parameters({"Threads": 4, "Hash": 2048, "UCI_Chess960": True})
+
+# chessboard
+board = chess.Board()
+
+class ChessGUI(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.possible_moves = []  # Initialize possible_moves here
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle('Stockfish Chess Bot')
+        self.setGeometry(100, 100, 800, 600)  # Set initial window size
+
+        # main layout
+        main_layout = QHBoxLayout()
+
+        # Left layout for the chessboard
+        left_layout = QVBoxLayout()
+        self.board_display = QSvgWidget()
+        self.board_display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.update_board_display()
+        left_layout.addWidget(self.board_display)
+
+        # chatbox and move history
+        right_layout = QVBoxLayout()
+        self.move_history = QTextEdit()
+        self.move_history.setReadOnly(True)
+        self.move_history.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        right_layout.addWidget(self.move_history)
+
+        self.chatbox = QTextEdit()
+        self.chatbox.setReadOnly(True)
+        self.chatbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        right_layout.addWidget(self.chatbox)
+
+        main_layout.addLayout(left_layout, 3)
+        main_layout.addLayout(right_layout, 1)
+
+        self.setLayout(main_layout)
+        self.board_display.mousePressEvent = self.get_click_position
+
+        self.selected_square = None
+
+    def update_board_display(self):
+        svg_board = chess.svg.board(board=board, squares=self.possible_moves).encode("UTF-8")
+        self.board_display.load(svg_board)
+
+    def get_click_position(self, event):
+        print("Mouse clicked")  # Debugging statement
+        x = event.pos().x()
+        y = event.pos().y()
+        square_size = self.board_display.width() / 8
+        file = int(x // square_size)
+        rank = 7 - int(y // square_size)
+        square = chess.square(file, rank)
+        print(f"Clicked square: {square} (file: {file}, rank: {rank})")  # Debugging statement
+
+        if self.selected_square is None:
+            self.selected_square = square
+            self.possible_moves = [move.to_square for move in board.legal_moves if move.from_square == square]
+            print(f"Possible moves from {square}: {self.possible_moves}")  # Debugging statement
+            self.update_board_display()
+        else:
+            move = chess.Move(self.selected_square, square)
+            print(f"Attempting move: {move}")  # Debugging statement
+            if move in board.legal_moves:
+                print(f"Move {move} is valid")  # Debugging statement
+                self.animate_piece(self.selected_square, square)
+                board.push(move)
+                stockfish.set_fen_position(board.fen())
+                self.move_history.append(f"Your move: {move.uci()}")
+                self.selected_square = None
+                self.possible_moves = []
+
+                # Get Stockfish's move
+                stockfish_move = stockfish.get_best_move()
+                board.push(chess.Move.from_uci(stockfish_move))
+                self.move_history.append(f"Stockfish's move: {stockfish_move}")
+                self.update_board_display()
+
+                # taunt
+                self.add_taunt()
+            else:
+                print(f"Move {move} is invalid")  # Debugging statement
+                self.move_history.append("Invalid move. Please try again.")
+                self.selected_square = None
+                self.possible_moves = []
+                self.update_board_display()
+
+    def animate_piece(self, from_square, to_square):
+        from_x = int((from_square % 8) * (self.board_display.width() / 8))
+        from_y = int((7 - (from_square // 8)) * (self.board_display.height() / 8))
+        to_x = int((to_square % 8) * (self.board_display.width() / 8))
+        to_y = int((7 - (to_square // 8)) * (self.board_display.height() / 8))
+
+        piece_label = QLabel(self.board_display)
+        piece_label.setPixmap(QPixmap("path_to_piece_image.png"))  # Replace with actual piece image path
+        piece_label.setGeometry(from_x, from_y, int(self.board_display.width() / 8), int(self.board_display.height() / 8))
+        piece_label.show()
+
+        piece_animation = QPropertyAnimation(piece_label, b"geometry")
+        piece_animation.setDuration(2000)  # Increase duration for smoother animation
+        piece_animation.setEasingCurve(QEasingCurve.InOutQuad)  # Use a smoother easing curve
+        piece_animation.setStartValue(QRect(from_x, from_y, int(self.board_display.width() / 8), int(self.board_display.height() / 8)))
+        piece_animation.setEndValue(QRect(to_x, to_y, int(self.board_display.width() / 8), int(self.board_display.height() / 8)))
+        piece_animation.start()
+
+    def add_taunt(self):
+        taunts = [
+            "Is that the best you can do?",
+            "I've seen better moves from a beginner!",
+            "You call that a strategy?",
+            "Checkmate in 3... just kidding, or am I?",
+            "Are you even trying?",
+            "Bobo hahahaha",
+            "Go next",
+            "womp womp",
+            "loser",
+            "you are an idiot",
+        ]
+        taunt = random.choice(taunts)
+        self.chatbox.append(f"Stockfish: {taunt}")
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    gui = ChessGUI()
+    gui.show()
+    sys.exit(app.exec_())
